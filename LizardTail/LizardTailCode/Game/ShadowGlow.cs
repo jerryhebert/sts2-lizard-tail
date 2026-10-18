@@ -32,8 +32,8 @@ public partial class ShadowGlow : ColorRect
     /// <summary>How far the fire reaches past the edges of what it marks.</summary>
     private const float Spill = 26f;
 
-    /// <summary>Overall strength. Raised from the first version, which was hard to pick out.</summary>
-    private const float Intensity = 1.25f;
+    /// <summary>Overall strength. Raised twice from the first version, which was hard to pick out.</summary>
+    private const float Intensity = 1.5f;
 
     /// <summary>Flat colour for when the shader will not compile, so the mark still appears.</summary>
     private static readonly Color Plain = new Color("5fd18f") with { A = 0.6f };
@@ -136,6 +136,12 @@ public partial class ShadowGlow : ColorRect
                 glow.OffsetTop = -Spill;
                 glow.OffsetRight = Spill;
                 glow.OffsetBottom = Spill;
+
+                // An option button is measured by the container holding it, which has not laid out
+                // when its screen finishes building: every button is still zero by zero here. The
+                // fit is redone once the layout has run, and reported, because a mark that silently
+                // draws at the wrong size looks exactly like one that was never drawn at all.
+                Callable.From(() => Fit(glow, target)).CallDeferred();
             }
         }
         catch (Exception ex)
@@ -159,16 +165,61 @@ public partial class ShadowGlow : ColorRect
             return;
         }
 
+        Clear(target);
+    }
+
+    /// <summary>
+    /// Removes every mark under a node and says how many there were.
+    ///
+    /// Each one is renamed before being freed, because QueueFree only takes effect at the end of
+    /// the frame: a screen that clears and re-marks in one pass would otherwise still see the old
+    /// mark by name and decline to draw the new one.
+    /// </summary>
+    public static int Clear(Node? target)
+    {
+        if (target == null || !IsInstanceValid(target))
+        {
+            return 0;
+        }
+
         try
         {
-            foreach (var glow in Descendants(target).OfType<ShadowGlow>().ToList())
+            var found = Descendants(target).OfType<ShadowGlow>().ToList();
+            foreach (var glow in found)
             {
+                glow.Name = "_lizardTailSpentGlow";
                 glow.QueueFree();
             }
+            return found.Count;
         }
         catch (Exception ex)
         {
             ModLog.Warn($"Could not clear a shadow mark: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Re-fits a mark to its target after the layout has run, and says what it ended up as.
+    /// </summary>
+    private static void Fit(ShadowGlow glow, Control target)
+    {
+        if (!IsInstanceValid(glow) || !IsInstanceValid(target))
+        {
+            return;
+        }
+
+        try
+        {
+            var spill = new Vector2(Spill, Spill);
+            glow.Size = target.Size + spill * 2;
+            glow.Position = -spill;
+            ModLog.Info($"Mark on {target.Name}: target {target.Size}, mark {glow.Size} at {glow.Position}, "
+                + $"visible {glow.IsVisibleInTree()}.");
+        }
+        catch (Exception ex)
+        {
+            ModLog.Warn($"Could not fit a shadow mark: {ex.Message}");
         }
     }
 
@@ -225,6 +276,11 @@ public static class ShadowCardRewardPatch
 
         try
         {
+            // Every mark on this screen is redrawn from scratch. Card nodes are pooled and reused,
+            // so one can arrive already carrying fire from the screen it was last used on, which
+            // showed up in testing as a second card glowing that this code never marked.
+            var stale = ShadowGlow.Clear(__instance);
+
             var floor = Shadowing.CurrentFloor();
             var wanted = floor?.PickedCards ?? Array.Empty<string>();
             var offered = options.Select(o => o.Card?.Id?.ToString() ?? "?").ToList();
@@ -248,7 +304,8 @@ public static class ShadowCardRewardPatch
             }
 
             ModLog.Info($"Card reward {Shadowing.Where()}: offered [{string.Join(", ", offered)}], "
-                + $"took last time [{string.Join(", ", wanted)}], {holders.Count} holder(s), marked {marked}.");
+                + $"took last time [{string.Join(", ", wanted)}], {holders.Count} holder(s), marked {marked}"
+                + (stale > 0 ? $", cleared {stale} stale mark(s) first." : "."));
         }
         catch (Exception ex)
         {
@@ -288,8 +345,20 @@ public static class ShadowEventOptionPatch
 
         try
         {
+            var stale = ShadowGlow.Clear(__instance);
+
             var floor = Shadowing.CurrentFloor();
-            var wanted = floor?.ChosenOptions.ToList() ?? new List<string>();
+
+            // How many times each option was taken, not merely whether it was. Two options on one
+            // screen can share a key - a screen offering two potions reads as POTION twice - and
+            // matching on presence alone lit both of them for a single choice.
+            var budget = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var key in floor?.ChosenOptions ?? Enumerable.Empty<string>())
+            {
+                budget[key] = budget.TryGetValue(key, out var n) ? n + 1 : 1;
+            }
+
+            var wanted = budget.Keys.ToList();
             var buttons = __instance.OptionButtons.ToList();
             var seen = new List<string>();
             var marked = 0;
@@ -298,15 +367,19 @@ public static class ShadowEventOptionPatch
             {
                 var key = KeyOf(button.Option);
                 seen.Add(key);
-                if (key.Length > 0 && wanted.Contains(key, StringComparer.Ordinal))
+                if (key.Length == 0 || !budget.TryGetValue(key, out var left) || left <= 0)
                 {
-                    ShadowGlow.Mark(button);
-                    marked++;
+                    continue;
                 }
+
+                budget[key] = left - 1;
+                ShadowGlow.Mark(button);
+                marked++;
             }
 
             ModLog.Info($"Event options {Shadowing.Where()}: on screen [{string.Join(", ", seen)}], "
-                + $"chose last time [{string.Join(", ", wanted)}], marked {marked}.");
+                + $"chose last time [{string.Join(", ", wanted)}], marked {marked}"
+                + (stale > 0 ? $", cleared {stale} stale mark(s) first." : "."));
         }
         catch (Exception ex)
         {
@@ -330,8 +403,9 @@ public static class ShadowEventOptionPatch
 /// row holds two nodes of the same kind both are marked: better to show the pair than to pick one
 /// and be confidently wrong.
 ///
-/// Only rows you have not reached yet are marked. The game already draws the path behind you, and
-/// relighting it would bury the one decision actually in front of you.
+/// Only the next row is marked. Lighting the whole route ahead put fire on 26 of 67 nodes in
+/// testing, which tells you nothing: the question is which node to click now, and every row after
+/// this one depends on what you click.
 /// </summary>
 [HarmonyPatch(typeof(NMapScreen), nameof(NMapScreen.SetMap))]
 public static class ShadowMapPatch
@@ -355,26 +429,26 @@ public static class ShadowMapPatch
             var history = state.MapPointHistory;
             var nextRow = act >= 0 && act < history.Count ? history[act].Count : 0;
 
+            var stale = ShadowGlow.Clear(__instance);
             var points = ShadowGlow.Descendants(__instance).OfType<NMapPoint>().ToList();
             var marked = 0;
-            foreach (var point in points)
+
+            if (run.FloorAt(act, nextRow) is { } next)
             {
-                var coord = point.Point?.coord;
-                if (coord is not { } at || at.row < nextRow)
+                foreach (var point in points)
                 {
-                    continue;
-                }
+                    if (point.Point is not { } p || p.coord.row != nextRow || !SameKind(next.PointType, p.PointType))
+                    {
+                        continue;
+                    }
 
-                if (run.FloorAt(act, at.row) is not { } floor || !SameKind(floor.PointType, point.Point!.PointType))
-                {
-                    continue;
+                    ShadowGlow.Mark(point);
+                    marked++;
                 }
-
-                ShadowGlow.Mark(point);
-                marked++;
             }
 
-            ModLog.Info($"Map for act {act}: {points.Count} node(s), marking from row {nextRow} on, marked {marked}.");
+            ModLog.Info($"Map for act {act}: {points.Count} node(s), next is row {nextRow}, marked {marked}"
+                + (stale > 0 ? $", cleared {stale} stale mark(s) first." : "."));
         }
         catch (Exception ex)
         {
