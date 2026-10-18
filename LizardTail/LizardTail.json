@@ -2,7 +2,7 @@
   "id": "LizardTail",
   "name": "Lizard Tail",
   "author": "jerry",
-  "description": "Keep several runs instead of one, multiplayer and solo: park the run the game would continue, start another, and swap back later. Take labelled checkpoints from the pause menu before a hard choice, then go back from the menu to try the other path. Nothing a swap or a restore replaces is ever deleted.",
+  "description": "Keep several runs instead of one, multiplayer and solo: park the run the game would continue, start another, and swap back later. Take labelled checkpoints from the pause menu before a hard choice, then go back from the menu to try the other path. Replaying a seed? Press F6 to mark the choices you made in an earlier run of it. Nothing a swap or a restore replaces is ever deleted.",
   "version": "v0.3.0",
   "min_game_version": "0.111.0",
   "has_pck": false,

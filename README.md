@@ -105,9 +105,9 @@ multiplayer menu for a run you host). The **Checkpoints** section lists them, th
 - **Restore** makes the checkpoint the game's save, so **Continue** (or **Load**) picks up from that
   moment. If the active run is the same one, where you were is kept first as a checkpoint named
   "Before going back to …" (with the game's previous save beside it), unless an identical checkpoint
-  already exists; if it is another run, that run is parked. Your own labels are never changed. Parked copies of the restored run
-  become checkpoints too, since the parked list clears copies of the active run once the game saves past
-  them. The checkpoint itself stays, so you can go back to it again.
+  already exists; if it is another run, that run is parked. Your own labels are never changed. Parked
+  copies of the restored run become checkpoints too, since the parked list clears copies of the active
+  run once the game saves past them. The checkpoint itself stays, so you can go back to it again.
 - **Rename** edits the label in place. **Trash** (press twice) moves a checkpoint to the trash folder.
 
 A run that was won, lost or abandoned after the checkpoint can still be restored. Its result is moved
@@ -116,6 +116,30 @@ statistics keep counting the first result, and count the new one too when the re
 
 In multiplayer, only the host keeps the save, so only the host can take and restore checkpoints, and
 everyone rejoins through **Load** as usual.
+
+## Shadowing an earlier run of a seed
+
+Replaying a seed and want to make the same choices you made last time? Press **F6** during a run to
+open the shadow picker. Anything you chose in the run you are shadowing is marked with a green glow
+as you reach it, so you can follow the same line as far as you like and then go your own way.
+
+The game already records every finished run in its own history, so this works on seeds you played
+long before installing the mod. Nothing has to be recorded first.
+
+- The picker lists every earlier run of the seed you are playing, oldest first, with how far each
+  got and how it ended. Pick any of them — the earliest, the latest, or one in the middle.
+- It opens on the run that got **furthest**, a win breaking a tie. Not the first run: a seed you
+  have replayed is mostly false starts abandoned on floor one or two, and shadowing one of those
+  would show you almost nothing.
+- Only runs played by the character you are playing now are listed, since card rewards differ
+  entirely between characters. In co-op only your own choices are shadowed, never a teammate's.
+- **Hide the glow** keeps your choice but stops drawing the marks, for when you want to play a floor
+  honestly without being told what you did last time.
+- The marks stop once you go deeper than the shadowed run ever got.
+
+Card rewards are marked today. The remaining screens — shops, events, campfires, chests, boss relics
+and the map — are the same mechanism applied per screen and are still to come. The map will be
+marked by row rather than by node: the game records which floor you took but not which column.
 
 ## Your normal saves stay in use
 

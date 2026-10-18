@@ -3,6 +3,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using LizardTail.LizardTailCode.Core;
+using LizardTail.LizardTailCode.Game;
 using Logger = MegaCrit.Sts2.Core.Logging.Logger;
 
 namespace LizardTail.LizardTailCode;
@@ -65,13 +66,15 @@ public static class LizardTailMod
             "RunSaveManager.RenameBrokenMultiplayerRunSave", "MigrationManager.PreserveCorruptFile",
             "NMainMenu._Ready", "NMainMenu.RefreshButtons", "SaveManager.DeleteCurrentRun",
             "UserDataPathProvider.get_IsRunningModded", "NGame.CheckShowModdedSaveFilePopup",
-            "NPauseMenu._Ready",
+            "RunManager.Launch", "RunManager.CleanUp", "NCardRewardSelectionScreen.RefreshOptions",
+            "NEventLayout.AddOptions", "NPauseMenu._Ready",
         };
         var missing = expected.Where(e => !patched.Contains(e)).ToList();
         if (missing.Count > 0)
         {
             ModLog.Error($"These patches did not apply, so the features behind them are off: {string.Join(", ", missing)}");
         }
-        ModLog.Info($"Lizard Tail ready ({patched.Count} patches)");
+        ShadowPanel.Install();
+        ModLog.Info($"Lizard Tail ready ({patched.Count} patches). {ShadowPanel.ToggleKey} opens the shadow picker during a run.");
     }
 }
