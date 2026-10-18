@@ -184,7 +184,7 @@ public partial class ShadowGlow : ColorRect
 
         try
         {
-            var found = Descendants(target).OfType<ShadowGlow>().ToList();
+            var found = Descendants(target).Where(n => n.Name == NodeName).ToList();
             foreach (var glow in found)
             {
                 glow.Name = "_lizardTailSpentGlow";
@@ -247,6 +247,77 @@ public partial class ShadowGlow : ColorRect
         }
     }
 
+    /// <summary>
+    /// Marks something drawn as a picture with transparency around it - a map node - by burning
+    /// along the edges of the picture itself.
+    ///
+    /// A rectangle behind a map icon fills the icon's whole transparent margin and reads as a green
+    /// block, not as a highlight. Here the icon's own alpha is dilated to make the light, so it
+    /// follows the shape. Falls back to the rectangle when no picture can be found, which is still
+    /// better than no mark at all.
+    /// </summary>
+    public static void MarkSilhouette(Control? target)
+    {
+        if (target == null || !IsInstanceValid(target) || target.GetNodeOrNull<Node>(NodeName) != null)
+        {
+            return;
+        }
+
+        var icon = IconOf(target);
+        if (icon == null)
+        {
+            Mark(target);
+            return;
+        }
+
+        try
+        {
+            var glow = new ShadowSilhouette();
+            glow.SetTexture(icon.Texture);
+            icon.AddChild(glow);
+            icon.MoveChild(glow, 0);
+            glow.SetAnchorsPreset(LayoutPreset.FullRect);
+            Callable.From(() => FitTo(glow, icon)).CallDeferred();
+        }
+        catch (Exception ex)
+        {
+            ModLog.Warn($"Could not mark a previously chosen map node: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The picture to take the shape from. The game names a map node's own art "Icon"; anything
+    /// else falls back to the biggest picture under the node, which is the art in practice.
+    /// </summary>
+    private static TextureRect? IconOf(Control target)
+    {
+        var pictures = Descendants(target).OfType<TextureRect>()
+            .Where(t => t.Texture != null)
+            .ToList();
+
+        return pictures.FirstOrDefault(t => t.Name.ToString().Contains("Icon", StringComparison.OrdinalIgnoreCase))
+            ?? pictures.OrderByDescending(t => t.Size.X * t.Size.Y).FirstOrDefault();
+    }
+
+    private static void FitTo(Control glow, Control target)
+    {
+        if (!IsInstanceValid(glow) || !IsInstanceValid(target))
+        {
+            return;
+        }
+
+        try
+        {
+            glow.Size = target.Size;
+            glow.Position = Vector2.Zero;
+            ModLog.Info($"Silhouette mark on {target.Name}: {glow.Size}, visible {glow.IsVisibleInTree()}.");
+        }
+        catch (Exception ex)
+        {
+            ModLog.Warn($"Could not fit a silhouette mark: {ex.Message}");
+        }
+    }
+
     /// <summary>Every node under one, for finding option nodes without reaching into private fields.</summary>
     internal static IEnumerable<Node> Descendants(Node root)
     {
@@ -257,6 +328,117 @@ public partial class ShadowGlow : ColorRect
             {
                 yield return deeper;
             }
+        }
+    }
+}
+
+/// <summary>
+/// Fire that follows the outline of a picture rather than its bounding box, for map nodes and
+/// anything else drawn with transparency around it.
+/// </summary>
+public partial class ShadowSilhouette : TextureRect
+{
+    private const float Intensity = 1.6f;
+
+    /// <summary>How far the light reaches past the edge of the shape, in the texture's own pixels.</summary>
+    private const float Radius = 9.0f;
+
+    private Texture2D? _source;
+
+    /// <summary>
+    /// Dilates the picture's alpha to make a halo outside its edges, then burns that halo. The
+    /// subtraction is what keeps the light outside the shape instead of washing over the art.
+    /// </summary>
+    private const string OutlineShader = """
+        shader_type canvas_item;
+
+        uniform float intensity = 1.6;
+        uniform float radius = 9.0;
+        uniform vec3 ember : source_color = vec3(0.04, 0.42, 0.20);
+        uniform vec3 flame : source_color = vec3(0.42, 1.0, 0.52);
+        uniform vec3 tip : source_color = vec3(0.86, 1.0, 0.82);
+
+        float hash(vec2 p)
+        {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
+        float vnoise(vec2 p)
+        {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+
+        float fbm(vec2 p)
+        {
+            float v = 0.0;
+            float a = 0.55;
+            for (int i = 0; i < 4; i++)
+            {
+                v += a * vnoise(p);
+                p *= 2.03;
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        void fragment()
+        {
+            vec2 px = TEXTURE_PIXEL_SIZE;
+            float here = texture(TEXTURE, UV).a;
+
+            float reach = 0.0;
+            for (int i = 0; i < 16; i++)
+            {
+                float ang = float(i) * 0.39269908;
+                vec2 dir = vec2(cos(ang), sin(ang));
+                for (int r = 1; r <= 4; r++)
+                {
+                    float f = float(r) / 4.0;
+                    reach = max(reach, texture(TEXTURE, UV + dir * px * radius * f).a * (1.0 - f * 0.55));
+                }
+            }
+
+            float halo = clamp(reach - here, 0.0, 1.0);
+
+            float n = fbm(vec2(UV.x * 7.0, UV.y * 8.0 - TIME * 1.5));
+            float lick = smoothstep(0.18, 0.92, n);
+
+            vec3 col = mix(ember, flame, lick);
+            col = mix(col, tip, smoothstep(0.76, 1.0, lick) * 0.6);
+
+            COLOR = vec4(col, clamp(halo * (0.45 + 0.95 * lick) * intensity, 0.0, 1.0));
+        }
+        """;
+
+    /// <summary>Set before the node enters the tree, since _Ready is what applies it.</summary>
+    public void SetTexture(Texture2D? texture) => _source = texture;
+
+    public override void _Ready()
+    {
+        Name = ShadowGlow.NodeName;
+        MouseFilter = MouseFilterEnum.Ignore;
+        ShowBehindParent = true;
+        Texture = _source;
+        ExpandMode = ExpandModeEnum.IgnoreSize;
+        StretchMode = StretchModeEnum.Scale;
+
+        try
+        {
+            var material = new ShaderMaterial { Shader = new Shader { Code = OutlineShader } };
+            material.SetShaderParameter("intensity", Intensity);
+            material.SetShaderParameter("radius", Radius);
+            Material = material;
+        }
+        catch (Exception ex)
+        {
+            // Without the shader this would just redraw the icon, which would be worse than
+            // nothing, so the mark removes itself instead.
+            ModLog.Warn($"Could not build the outline shader, so this mark is dropped: {ex.Message}");
+            QueueFree();
         }
     }
 }
@@ -410,10 +592,24 @@ public static class ShadowEventOptionPatch
 /// testing, which tells you nothing: the question is which node to click now, and every row after
 /// this one depends on what you click.
 /// </summary>
-[HarmonyPatch(typeof(NMapScreen), nameof(NMapScreen.SetMap))]
+[HarmonyPatch(typeof(NMapScreen))]
 public static class ShadowMapPatch
 {
-    public static void Postfix(NMapScreen __instance)
+    /// <summary>The map is built once per act.</summary>
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(NMapScreen.SetMap))]
+    public static void AfterSetMap(NMapScreen __instance) => Apply(__instance);
+
+    /// <summary>
+    /// And redrawn every time it is shown. Marking only on SetMap left the marks frozen on the row
+    /// that was next when the act began, so after the first floor they pointed at a decision
+    /// already made.
+    /// </summary>
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(NMapScreen.RefreshAllPointVisuals))]
+    public static void AfterRefresh(NMapScreen __instance) => Apply(__instance);
+
+    private static void Apply(NMapScreen __instance)
     {
         if (!Shadowing.IsOn || Shadowing.Run is not { } run)
         {
@@ -445,7 +641,7 @@ public static class ShadowMapPatch
                         continue;
                     }
 
-                    ShadowGlow.Mark(point);
+                    ShadowGlow.MarkSilhouette(point);
                     marked++;
                 }
             }
