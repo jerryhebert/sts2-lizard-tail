@@ -2,6 +2,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
@@ -10,12 +11,14 @@ using LizardTail.LizardTailCode.Core;
 namespace LizardTail.LizardTailCode.Game;
 
 /// <summary>
-/// The mark on something you chose last time: a green border with a soft glow around it, breathing
-/// slowly so it reads as a highlight rather than as part of the art.
+/// The mark on something you chose last time: a green glow lying under it, larger than it, so what
+/// you see is a rim of light around the edges and a soft bloom beyond. It breathes, so it reads as
+/// something burning rather than as a drawn shape.
 ///
-/// Added as the last child of whatever it marks and anchored to fill it, so it draws in front, has
-/// a hollow centre that leaves the art readable, and follows its target's own layout and animation
-/// without any per-screen positioning.
+/// Under rather than over, and that is the whole design. An outline on top reads as part of the art
+/// - the first attempt put a rectangle inside the card, competing with the frame and leaving it
+/// indistinguishable from a card whose art happens to be green. Light leaking out from behind
+/// cannot be mistaken for anything the card itself is doing.
 /// </summary>
 public partial class ShadowGlow : Panel
 {
@@ -24,15 +27,21 @@ public partial class ShadowGlow : Panel
     /// <summary>Green, and not a green the game uses: its own accents are gold, red and purple.</summary>
     private static readonly Color Line = new("5fd18f");
 
-    private const float QuietAlpha = 0.5f;
-    private const float BrightAlpha = 1.0f;
-    private const double BreathSeconds = 1.1;
+    private const float QuietAlpha = 0.45f;
+    private const float BrightAlpha = 0.95f;
+    private const double BreathSeconds = 1.0;
 
-    /// <summary>What to fill when the target has no size of its own yet. Roughly a card.</summary>
-    private static readonly Vector2 Fallback = new(230, 320);
+    /// <summary>How far the glow reaches past the edges of what it marks.</summary>
+    private const float Spill = 15f;
 
-    /// <summary>Marks a control, or does nothing if it is already marked.</summary>
-    public static void Mark(Control? target)
+    /// <summary>
+    /// Marks a control, or does nothing if it is already marked.
+    ///
+    /// <paramref name="centredSize"/> is for a target with no rect of its own: a card is drawn
+    /// centred on its node's origin and leaves that node sized zero, so the glow takes the card's
+    /// own dimensions and is centred the same way instead of collapsing to nothing.
+    /// </summary>
+    public static void Mark(Control? target, Vector2? centredSize = null)
     {
         if (target == null || !IsInstanceValid(target) || target.GetNodeOrNull<Node>(NodeName) != null)
         {
@@ -43,16 +52,27 @@ public partial class ShadowGlow : Panel
         {
             var glow = new ShadowGlow();
             target.AddChild(glow);
-            glow.SetAnchorsPreset(LayoutPreset.FullRect);
 
-            // A target laid out by position rather than by size would collapse the glow to nothing.
-            if (target.Size.X < 1 || target.Size.Y < 1)
+            // First child, so everything the target draws lands on top of it. ShowBehindParent is
+            // not enough on its own: it orders the glow against its parent, not against the
+            // parent's other children, which is where the art actually is.
+            target.MoveChild(glow, 0);
+
+            if (centredSize is { } size)
             {
-                glow.CustomMinimumSize = Fallback;
-                glow.Size = Fallback;
-                glow.Position = -Fallback / 2;
-                ModLog.Info($"Marked {target.Name}, which had no size yet, at a card's size.");
+                glow.Size = size + new Vector2(Spill * 2, Spill * 2);
+                glow.Position = -size / 2 - new Vector2(Spill, Spill);
             }
+            else
+            {
+                glow.SetAnchorsPreset(LayoutPreset.FullRect);
+                glow.OffsetLeft = -Spill;
+                glow.OffsetTop = -Spill;
+                glow.OffsetRight = Spill;
+                glow.OffsetBottom = Spill;
+            }
+
+            glow.PivotOffset = glow.Size / 2;
         }
         catch (Exception ex)
         {
@@ -65,28 +85,20 @@ public partial class ShadowGlow : Panel
     {
         Name = NodeName;
         MouseFilter = MouseFilterEnum.Ignore;
-        // In front of the art, which is why the fill is fully transparent.
-        ZIndex = 50;
+        ShowBehindParent = true;
+        ZIndex = -1;
 
+        // Filled, not outlined: the card covers all of it but the rim, and the shadow carries the
+        // light further out so the edge is soft instead of a drawn line.
         AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
-            BgColor = new Color(0, 0, 0, 0),
-            BorderColor = Line,
-            BorderWidthLeft = 4,
-            BorderWidthTop = 4,
-            BorderWidthRight = 4,
-            BorderWidthBottom = 4,
-            CornerRadiusTopLeft = 10,
-            CornerRadiusTopRight = 10,
-            CornerRadiusBottomLeft = 10,
-            CornerRadiusBottomRight = 10,
-            // The drop shadow is what makes it read as a glow rather than a drawn outline.
-            ShadowColor = new Color(Line, 0.6f),
-            ShadowSize = 18,
-            ExpandMarginLeft = 8,
-            ExpandMarginTop = 8,
-            ExpandMarginRight = 8,
-            ExpandMarginBottom = 8,
+            BgColor = new Color(Line, 0.85f),
+            CornerRadiusTopLeft = 24,
+            CornerRadiusTopRight = 24,
+            CornerRadiusBottomLeft = 24,
+            CornerRadiusBottomRight = 24,
+            ShadowColor = new Color(Line, 0.5f),
+            ShadowSize = 26,
         });
 
         Modulate = new Color(1, 1, 1, QuietAlpha);
@@ -97,9 +109,13 @@ public partial class ShadowGlow : Panel
     {
         try
         {
+            // Brightness and size together: light that only blinks reads as a shape being toggled,
+            // where light that also swells reads as something burning behind the card.
             var tween = CreateTween().SetLoops();
             tween.TweenProperty(this, "modulate:a", BrightAlpha, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
+            tween.Parallel().TweenProperty(this, "scale", Vector2.One * 1.04f, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
             tween.TweenProperty(this, "modulate:a", QuietAlpha, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
+            tween.Parallel().TweenProperty(this, "scale", Vector2.One, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
         }
         catch (Exception ex)
         {
@@ -151,11 +167,15 @@ public static class ShadowCardRewardPatch
             foreach (var holder in holders)
             {
                 var id = holder.CardModel?.Id?.ToString();
-                if (id != null && wanted.Contains(id, StringComparer.Ordinal))
+                if (id == null || !wanted.Contains(id, StringComparer.Ordinal))
                 {
-                    ShadowGlow.Mark(holder);
-                    marked++;
+                    continue;
                 }
+
+                // The card, not its holder: the holder is laid out by position and has no rect at
+                // all, while the card is drawn centred on its own node at a size the game states.
+                ShadowGlow.Mark(holder.CardNode, NCard.defaultSize);
+                marked++;
             }
 
             ModLog.Info($"Card reward {Shadowing.Where()}: offered [{string.Join(", ", offered)}], "
