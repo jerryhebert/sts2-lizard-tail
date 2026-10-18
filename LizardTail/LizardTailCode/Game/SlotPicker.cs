@@ -197,6 +197,7 @@ public partial class SlotPicker : PanelContainer
                 : null;
             BuildActive(active, me, note);
             BuildParked(all, SlotStore.Listed(all, proof), me);
+            BuildCheckpoints(CheckpointStore.All(_host.Kind, me), active, me);
         }
         catch (Exception ex)
         {
@@ -339,31 +340,123 @@ public partial class SlotPicker : PanelContainer
     /// Trash needs a second press within a few seconds, so a stray click cannot remove a run. The timer
     /// owns the armed state, so the label and what the next press does always agree.
     /// </summary>
-    private SlotButton MakeTrashButton(Slot slot, IReadOnlyList<Slot> all, string key)
+    private SlotButton MakeTrashButton(Slot slot, IReadOnlyList<Slot> all, string key) =>
+        MakeTwoPressButton("Trash", "Press again to trash", key, () => SlotActions.Trash(slot, all));
+
+    /// <summary>A button that acts on its second press within a few seconds; the first only arms it.</summary>
+    private SlotButton MakeTwoPressButton(string text, string armedText, string key, Func<string> action)
     {
         SlotButton? button = null;
         var armed = false;
         var arming = 0;
-        button = MakeButton("Trash", key, () =>
+        button = MakeButton(text, key, () =>
         {
             if (armed)
             {
-                Act(() => SlotActions.Trash(slot, all));
+                Act(action);
                 return;
             }
             armed = true;
             var id = ++arming;
-            button!.Text = "Press again to trash";
+            button!.Text = armedText;
             GetTree().CreateTimer(4).Timeout += () =>
             {
                 if (id == arming && IsInstanceValid(button))
                 {
                     armed = false;
-                    button.Text = "Trash";
+                    button.Text = text;
                 }
             };
         });
         return button;
+    }
+
+    /// <summary>
+    /// Checkpoints of this kind of run, the active run's first, grouped under each run. Restore makes one
+    /// the game's save (keeping where you were as another checkpoint); Rename edits its label in place.
+    /// </summary>
+    private void BuildCheckpoints(IReadOnlyList<Checkpoint> all, RunSummary? active, ulong me)
+    {
+        var ordered = CheckpointRules.Ordered(all, c => c.Summary, c => c.Info.CreatedUnix, active?.StartTime);
+        _list.AddChild(MakeLabel(ordered.Count == 0 ? "CHECKPOINTS" : $"CHECKPOINTS ({ordered.Count})", 14, Gold, spacing: 2));
+        if (ordered.Count == 0)
+        {
+            _list.AddChild(MakeLabel("None yet. Take one from the pause menu during a run, before a choice you may want to try the other way.", 15, Muted));
+            return;
+        }
+
+        long? group = null;
+        foreach (var checkpoint in ordered)
+        {
+            try
+            {
+                var run = checkpoint.Summary;
+                if (run != null && run.StartTime != group)
+                {
+                    group = run.StartTime;
+                    var whose = run.StartTime == active?.StartTime ? "Active run" : SlotText.Who(_host.Kind, run, me, PlayerNames.NameOf);
+                    _list.AddChild(MakeLabel($"{whose}  ·  {SlotText.Progress(run)}", 15, Muted));
+                }
+                _list.AddChild(CheckpointRow(checkpoint));
+            }
+            catch (Exception ex)
+            {
+                ModLog.Warn($"Could not show checkpoint {checkpoint.FileName}: {ex}");
+                _list.AddChild(MakeLabel($"{checkpoint.FileName}: could not be shown ({ex.Message})", 15, Warn));
+            }
+        }
+    }
+
+    private VBoxContainer CheckpointRow(Checkpoint checkpoint)
+    {
+        var row = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        row.AddThemeConstantOverride("separation", 2);
+
+        var title = MakeLabel(checkpoint.Info.Label, 18, Ink);
+        row.AddChild(title);
+        var edit = new LineEdit
+        {
+            Text = checkpoint.Info.Label,
+            MaxLength = CheckpointInfo.MaxLabelLength,
+            Visible = false,
+            CustomMinimumSize = new Vector2(Width - 80, 36),
+        };
+        edit.AddThemeFontSizeOverride("font_size", 17);
+        row.AddChild(edit);
+
+        if (checkpoint.Summary is { } run)
+        {
+            row.AddChild(MakeLabel($"{CheckpointText.RestorePoint(run)}  ·  {SlotText.Saved(run.SaveTime)}", 15, Muted));
+        }
+        if (CheckpointText.StateNote(checkpoint.State) is { } note)
+        {
+            row.AddChild(MakeLabel(note, 15, checkpoint.State is SlotState.Finished or SlotState.Abandoned ? Gold : Warn));
+        }
+
+        var key = checkpoint.FileName;
+        var restore = MakeButton("Restore", $"restore:{key}", () => Act(() => SlotActions.Restore(checkpoint)));
+        restore.Disabled = !CheckpointRules.CanRestore(checkpoint.State);
+
+        SlotButton? rename = null;
+        rename = MakeButton("Rename", $"rename:{key}", () =>
+        {
+            if (!edit.Visible)
+            {
+                title.Visible = false;
+                edit.Visible = true;
+                edit.GrabFocus();
+                edit.SelectAll();
+                rename!.Text = "Save name";
+                return;
+            }
+            Act(() => CheckpointStore.Rename(checkpoint, edit.Text));
+        });
+        edit.TextSubmitted += text => Act(() => CheckpointStore.Rename(checkpoint, text));
+        rename.Disabled = checkpoint.Summary == null;
+
+        var trash = MakeTwoPressButton("Trash", "Press again to trash", $"ctrash:{key}", () => CheckpointStore.Trash(checkpoint));
+        AddButtons(row, restore, rename, trash);
+        return row;
     }
 
     /// <summary>

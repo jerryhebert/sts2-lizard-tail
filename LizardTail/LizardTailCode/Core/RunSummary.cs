@@ -30,6 +30,20 @@ public sealed record RunSummary(
 
     public bool HasPlayer(ulong netId) => Players.Any(p => p.NetId == netId);
 
+    /// <summary>
+    /// The kind of map point the save was made in (monster, elite, boss, treasure, shop, rest_site,
+    /// unknown, ancient). The game saves on entering a room before adding it to the run's history, so
+    /// for such a save this is the map point at the last visited coordinate, not the last history entry.
+    /// </summary>
+    public string? RoomType { get; init; }
+
+    /// <summary>
+    /// Set when the save was made after that room was finished but before leaving it (a fight won with
+    /// its rewards waiting, an Ancient's choice made): the game's pre-finished room type (monster,
+    /// elite, boss, event, ...). Null for a save made on entering the room.
+    /// </summary>
+    public string? FinishedRoomType { get; init; }
+
     /// <summary>Null when the text is not a run save the picker can describe.</summary>
     public static RunSummary? TryParse(string? json)
     {
@@ -55,10 +69,39 @@ public sealed record RunSummary(
 
             // map_point_history is one list of visited rooms per act; the floor reached is their total
             // (the game's own SerializableRun.FloorReached).
+            var actIndex = (int)(Long(root, "current_act_index") ?? 0);
             var floor = 0;
+            var inCurrentAct = 0;
+            string? roomType = null;
             if (root.TryGetProperty("map_point_history", out var history) && history.ValueKind == JsonValueKind.Array)
             {
-                floor = history.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.Array).Sum(a => a.GetArrayLength());
+                var perAct = history.EnumerateArray().ToList();
+                floor = perAct.Where(a => a.ValueKind == JsonValueKind.Array).Sum(a => a.GetArrayLength());
+                if (actIndex >= 0 && actIndex < perAct.Count && perAct[actIndex].ValueKind == JsonValueKind.Array)
+                {
+                    inCurrentAct = perAct[actIndex].GetArrayLength();
+                }
+                if (perAct.Where(a => a.ValueKind == JsonValueKind.Array).LastOrDefault(a => a.GetArrayLength() > 0) is { ValueKind: JsonValueKind.Array } lastAct)
+                {
+                    roomType = Str(lastAct[lastAct.GetArrayLength() - 1], "map_point_type");
+                }
+            }
+
+            string? finished = null;
+            if (root.TryGetProperty("pre_finished_room", out var pre) && pre.ValueKind == JsonValueKind.Object
+                && !(pre.TryGetProperty("is_pre_finished", out var isPre) && isPre.ValueKind == JsonValueKind.False))
+            {
+                finished = Str(pre, "room_type") ?? "room";
+            }
+
+            // A save made on entering a room comes before the room is added to the history: visited
+            // coordinates (kept per act) are then ahead of the act's history, and the room being entered
+            // is the map point at the last of them.
+            if (finished == null && root.TryGetProperty("visited_map_coords", out var visited)
+                && visited.ValueKind == JsonValueKind.Array && visited.GetArrayLength() > inCurrentAct)
+            {
+                floor += visited.GetArrayLength() - inCurrentAct;
+                roomType = MapPointTypeAt(root, actIndex, visited[visited.GetArrayLength() - 1]);
             }
 
             var players = new List<RunPlayer>();
@@ -84,12 +127,49 @@ public sealed record RunSummary(
                 acts,
                 floor,
                 players,
-                (int)(Long(root, "schema_version") ?? 0));
+                (int)(Long(root, "schema_version") ?? 0))
+            {
+                RoomType = roomType,
+                FinishedRoomType = finished,
+            };
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    /// <summary>The type of the map point at <paramref name="coord"/> in an act's saved map, or null.</summary>
+    private static string? MapPointTypeAt(JsonElement root, int actIndex, JsonElement coord)
+    {
+        if (Long(coord, "col") is not { } col || Long(coord, "row") is not { } row
+            || !root.TryGetProperty("acts", out var acts) || acts.ValueKind != JsonValueKind.Array
+            || actIndex < 0 || actIndex >= acts.GetArrayLength()
+            || !acts[actIndex].TryGetProperty("saved_map", out var map) || map.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        var candidates = new List<JsonElement>();
+        if (map.TryGetProperty("points", out var points) && points.ValueKind == JsonValueKind.Array)
+        {
+            candidates.AddRange(points.EnumerateArray());
+        }
+        foreach (var name in new[] { "boss", "second_boss", "start" })
+        {
+            if (map.TryGetProperty(name, out var point) && point.ValueKind == JsonValueKind.Object)
+            {
+                candidates.Add(point);
+            }
+        }
+        foreach (var point in candidates)
+        {
+            if (point.ValueKind == JsonValueKind.Object && point.TryGetProperty("coord", out var at)
+                && Long(at, "col") == col && Long(at, "row") == row)
+            {
+                return Str(point, "type");
+            }
+        }
+        return null;
     }
 
     private static string? Str(JsonElement e, string name) =>
