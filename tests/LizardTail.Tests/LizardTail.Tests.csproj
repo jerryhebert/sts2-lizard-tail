@@ -29,7 +29,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1" />
     <!-- Microsoft.NET.Test.Sdk drags in a deprecated 5.0.0 of this package; pin it forward so the
          dependency audit stays clean. Remove once the test SDK stops referencing the old version. -->
     <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.12" />
