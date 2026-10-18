@@ -227,8 +227,11 @@ public partial class ShadowGlow : ColorRect
     {
         Name = NodeName;
         MouseFilter = MouseFilterEnum.Ignore;
+        // Behind the parent and its art, but NOT pushed down the canvas layer. A negative ZIndex
+        // puts the mark behind the screen's own background panel, where it is invisible: rendering
+        // the real node structure in the engine showed the mark vanish at -1 and appear at 0.
+        // Cards survived it only because nothing opaque sits behind them.
         ShowBehindParent = true;
-        ZIndex = -1;
         Color = Plain;
 
         try
