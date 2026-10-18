@@ -19,11 +19,17 @@ public sealed record ShadowFloor(
     IReadOnlyList<string> PickedRelics,
     IReadOnlyList<string> PickedPotions,
     IReadOnlyList<string> RestSiteChoices,
-    IReadOnlyList<string> UpgradedCards)
+    IReadOnlyList<string> UpgradedCards,
+    IReadOnlyList<string> EventChoices,
+    IReadOnlyList<string> AncientChoices)
 {
     public bool IsEmpty =>
         PickedCards.Count == 0 && PickedRelics.Count == 0 && PickedPotions.Count == 0
-        && RestSiteChoices.Count == 0 && UpgradedCards.Count == 0;
+        && RestSiteChoices.Count == 0 && UpgradedCards.Count == 0
+        && EventChoices.Count == 0 && AncientChoices.Count == 0;
+
+    /// <summary>Option keys taken at an event or at Neow, which share one on-screen button type.</summary>
+    public IEnumerable<string> ChosenOptions => EventChoices.Concat(AncientChoices);
 }
 
 /// <summary>
@@ -176,7 +182,9 @@ public sealed record ShadowRun(
                     PickedRelics: Chosen(stats, "relic_choices", null, "choice", "was_picked"),
                     PickedPotions: Chosen(stats, "potion_choices", null, "choice", "was_picked"),
                     RestSiteChoices: Strings(stats, "rest_site_choices"),
-                    UpgradedCards: Strings(stats, "upgraded_cards")));
+                    UpgradedCards: Strings(stats, "upgraded_cards"),
+                    EventChoices: OptionKeys(stats, "event_choices", null),
+                    AncientChoices: OptionKeys(stats, "ancient_choice", "was_chosen")));
                 row++;
             }
             actIndex++;
@@ -254,6 +262,55 @@ public sealed record ShadowRun(
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Option keys from an event or Neow record. Both store the option only as a localization key
+    /// such as "SOME_EVENT.TAKE_THE_GOLD.title"; the game identifies the option by the second part
+    /// from the end, so that is what is matched against the live button.
+    /// </summary>
+    private static List<string> OptionKeys(JsonElement? stats, string array, string? flag)
+    {
+        var result = new List<string>();
+        if (stats is not { } s || !s.TryGetProperty(array, out var items) || items.ValueKind != JsonValueKind.Array)
+        {
+            return result;
+        }
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (flag != null && !Bool(item, flag))
+            {
+                continue;
+            }
+
+            // The record carries the computed key too, when the game wrote one.
+            if (Str(item, "TextKey") is { Length: > 0 } ready)
+            {
+                result.Add(ready);
+                continue;
+            }
+
+            if (item.TryGetProperty("title", out var title) && Str(title, "key") is { Length: > 0 } key
+                && OptionKey(key) is { Length: > 0 } derived)
+            {
+                result.Add(derived);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The part of a localization key the game treats as the option's identity.</summary>
+    public static string OptionKey(string? locEntryKey)
+    {
+        if (string.IsNullOrEmpty(locEntryKey))
+        {
+            return "";
+        }
+
+        var parts = locEntryKey.Split('.');
+        return parts.Length >= 2 ? parts[^2] : parts[^1];
     }
 
     private static List<string> Strings(JsonElement? stats, string array)

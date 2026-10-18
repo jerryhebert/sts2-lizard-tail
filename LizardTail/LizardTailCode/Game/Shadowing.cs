@@ -134,6 +134,21 @@ public static class Shadowing
         return row < 0 ? null : run.FloorAt(act, row);
     }
 
+    /// <summary>Where you are, for the log: the floor a mark was or was not drawn on.</summary>
+    public static string Where()
+    {
+        if (CurrentState() is not { } state)
+        {
+            return "(no run)";
+        }
+
+        var act = state.CurrentActIndex;
+        var history = state.MapPointHistory;
+        var row = act >= 0 && act < history.Count ? history[act].Count - 1 : -1;
+        var known = CurrentFloor() is { } floor ? floor.PointType : "nothing recorded";
+        return $"at act {act} row {row} ({known})";
+    }
+
     /// <summary>The live run, read through the private property the game keeps it in.</summary>
     public static RunState? CurrentState()
     {

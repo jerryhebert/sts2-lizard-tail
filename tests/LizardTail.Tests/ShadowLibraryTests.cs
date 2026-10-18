@@ -15,7 +15,8 @@ public class ShadowLibraryTests
         {
             list.Add(new ShadowFloor(0, i, "monster",
                 Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
-                Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>()));
+                Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
+                Array.Empty<string>(), Array.Empty<string>()));
         }
 
         return new ShadowRun(seed, startTime, 0, 10, "custom", character,
