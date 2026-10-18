@@ -2,37 +2,103 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Nodes.Cards;
 using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
+using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using LizardTail.LizardTailCode.Core;
 
 namespace LizardTail.LizardTailCode.Game;
 
 /// <summary>
-/// The mark on something you chose last time: a green glow lying under it, larger than it, so what
-/// you see is a rim of light around the edges and a soft bloom beyond. It breathes, so it reads as
-/// something burning rather than as a drawn shape.
+/// The mark on something you chose last time: green fire burning behind it, larger than it, so what
+/// you see is flame licking out around the edges while the art covers the rest.
 ///
 /// Under rather than over, and that is the whole design. An outline on top reads as part of the art
-/// - the first attempt put a rectangle inside the card, competing with the frame and leaving it
-/// indistinguishable from a card whose art happens to be green. Light leaking out from behind
-/// cannot be mistaken for anything the card itself is doing.
+/// - an early attempt drew a rectangle inside the card, where it competed with the frame and left
+/// the card indistinguishable from one whose art simply happens to be green. Light coming from
+/// behind cannot be mistaken for anything the card itself is doing.
+///
+/// The flame is a shader rather than a tween on a solid shape, because a shape that only swells and
+/// brightens reads as a pulsing rectangle however it is coloured. The motion has to be in the
+/// surface, not in the outline.
 /// </summary>
-public partial class ShadowGlow : Panel
+public partial class ShadowGlow : ColorRect
 {
     public const string NodeName = "LizardTailShadowGlow";
 
-    /// <summary>Green, and not a green the game uses: its own accents are gold, red and purple.</summary>
-    private static readonly Color Line = new("5fd18f");
+    /// <summary>How far the fire reaches past the edges of what it marks.</summary>
+    private const float Spill = 26f;
 
-    private const float QuietAlpha = 0.45f;
-    private const float BrightAlpha = 0.95f;
-    private const double BreathSeconds = 1.0;
+    /// <summary>Overall strength. Raised from the first version, which was hard to pick out.</summary>
+    private const float Intensity = 1.25f;
 
-    /// <summary>How far the glow reaches past the edges of what it marks.</summary>
-    private const float Spill = 15f;
+    /// <summary>Flat colour for when the shader will not compile, so the mark still appears.</summary>
+    private static readonly Color Plain = new Color("5fd18f") with { A = 0.6f };
+
+    /// <summary>
+    /// Green fire. It lives near the edges of this rect and fades out well before the boundary, so
+    /// no straight edge or corner of the rect is ever visible; the middle is covered by whatever is
+    /// being marked. Two noise layers drift upward at different rates, which is what keeps it from
+    /// looking like one texture being scrolled.
+    /// </summary>
+    private const string FlameShader = """
+        shader_type canvas_item;
+
+        uniform float intensity = 1.25;
+        uniform vec3 ember : source_color = vec3(0.04, 0.42, 0.20);
+        uniform vec3 flame : source_color = vec3(0.42, 1.0, 0.52);
+        uniform vec3 tip : source_color = vec3(0.86, 1.0, 0.82);
+
+        float hash(vec2 p)
+        {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
+        float vnoise(vec2 p)
+        {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+
+        float fbm(vec2 p)
+        {
+            float v = 0.0;
+            float a = 0.55;
+            for (int i = 0; i < 4; i++)
+            {
+                v += a * vnoise(p);
+                p *= 2.03;
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        void fragment()
+        {
+            vec2 uv = UV;
+
+            float edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+            float falloff = smoothstep(0.0, 0.11, edge);
+
+            float n1 = fbm(vec2(uv.x * 5.0, uv.y * 6.0 - TIME * 1.30));
+            float n2 = fbm(vec2(uv.x * 9.0 + 3.7, uv.y * 11.0 - TIME * 2.05));
+            float n = n1 * 0.65 + n2 * 0.35;
+
+            float lick = smoothstep(0.20, 0.90, n);
+            float a = falloff * (0.45 + 0.95 * lick) * intensity;
+
+            vec3 col = mix(ember, flame, lick);
+            col = mix(col, tip, smoothstep(0.76, 1.0, lick) * 0.6);
+
+            COLOR = vec4(col, clamp(a, 0.0, 1.0));
+        }
+        """;
 
     /// <summary>
     /// Marks a control, or does nothing if it is already marked.
@@ -71,13 +137,38 @@ public partial class ShadowGlow : Panel
                 glow.OffsetRight = Spill;
                 glow.OffsetBottom = Spill;
             }
-
-            glow.PivotOffset = glow.Size / 2;
         }
         catch (Exception ex)
         {
             // A missing highlight is a cosmetic loss; it must never take a screen down with it.
             ModLog.Warn($"Could not mark a previously chosen option: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Takes the mark off, wherever it sits under the given node.
+    ///
+    /// Card nodes are pooled: one marked on a reward screen comes back later as an unrelated card in
+    /// a fight and brings the fire with it, drawn in front of the hand rather than behind it.
+    /// Clearing it on the way into and out of the pool is what keeps a mark on its own screen.
+    /// </summary>
+    public static void Unmark(Node? target)
+    {
+        if (target == null || !IsInstanceValid(target))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var glow in Descendants(target).OfType<ShadowGlow>().ToList())
+            {
+                glow.QueueFree();
+            }
+        }
+        catch (Exception ex)
+        {
+            ModLog.Warn($"Could not clear a shadow mark: {ex.Message}");
         }
     }
 
@@ -87,40 +178,18 @@ public partial class ShadowGlow : Panel
         MouseFilter = MouseFilterEnum.Ignore;
         ShowBehindParent = true;
         ZIndex = -1;
+        Color = Plain;
 
-        // Filled, not outlined: the card covers all of it but the rim, and the shadow carries the
-        // light further out so the edge is soft instead of a drawn line.
-        AddThemeStyleboxOverride("panel", new StyleBoxFlat
-        {
-            BgColor = new Color(Line, 0.85f),
-            CornerRadiusTopLeft = 24,
-            CornerRadiusTopRight = 24,
-            CornerRadiusBottomLeft = 24,
-            CornerRadiusBottomRight = 24,
-            ShadowColor = new Color(Line, 0.5f),
-            ShadowSize = 26,
-        });
-
-        Modulate = new Color(1, 1, 1, QuietAlpha);
-        Breathe();
-    }
-
-    private void Breathe()
-    {
         try
         {
-            // Brightness and size together: light that only blinks reads as a shape being toggled,
-            // where light that also swells reads as something burning behind the card.
-            var tween = CreateTween().SetLoops();
-            tween.TweenProperty(this, "modulate:a", BrightAlpha, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
-            tween.Parallel().TweenProperty(this, "scale", Vector2.One * 1.04f, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
-            tween.TweenProperty(this, "modulate:a", QuietAlpha, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
-            tween.Parallel().TweenProperty(this, "scale", Vector2.One, BreathSeconds).SetTrans(Tween.TransitionType.Sine);
+            var material = new ShaderMaterial { Shader = new Shader { Code = FlameShader } };
+            material.SetShaderParameter("intensity", Intensity);
+            Material = material;
         }
         catch (Exception ex)
         {
-            // Still a perfectly good highlight standing still.
-            ModLog.Warn($"Could not animate the shadow glow: {ex.Message}");
+            // The flat green rect is still a perfectly readable mark.
+            ModLog.Warn($"Could not build the flame shader, falling back to a plain glow: {ex.Message}");
         }
     }
 
@@ -188,6 +257,19 @@ public static class ShadowCardRewardPatch
     }
 }
 
+/// <summary>Clears a mark as a card node goes back to the pool, and again as it comes out.</summary>
+[HarmonyPatch(typeof(NCard))]
+public static class ShadowCardPoolingPatch
+{
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(NCard.OnFreedToPool))]
+    public static void AfterFreed(NCard __instance) => ShadowGlow.Unmark(__instance);
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(NCard.OnReturnedFromPool))]
+    public static void AfterReturned(NCard __instance) => ShadowGlow.Unmark(__instance);
+}
+
 /// <summary>
 /// Marks the event option you took last time, and the Neow blessing you started with.
 ///
@@ -238,4 +320,73 @@ public static class ShadowEventOptionPatch
     /// </summary>
     private static string KeyOf(EventOption? option) =>
         option?.HistoryName?.LocEntryKey is { } key ? ShadowRun.OptionKey(key) : "";
+}
+
+/// <summary>
+/// Marks the route the shadowed run took, so you can see which node to click.
+///
+/// A map node is joined to history by its row, which the game treats as the index into that act's
+/// history - it looks its own icons up the same way. There is no column in the record, so where a
+/// row holds two nodes of the same kind both are marked: better to show the pair than to pick one
+/// and be confidently wrong.
+///
+/// Only rows you have not reached yet are marked. The game already draws the path behind you, and
+/// relighting it would bury the one decision actually in front of you.
+/// </summary>
+[HarmonyPatch(typeof(NMapScreen), nameof(NMapScreen.SetMap))]
+public static class ShadowMapPatch
+{
+    public static void Postfix(NMapScreen __instance)
+    {
+        if (!Shadowing.IsOn || Shadowing.Run is not { } run)
+        {
+            return;
+        }
+
+        try
+        {
+            var state = Shadowing.CurrentState();
+            if (state == null)
+            {
+                return;
+            }
+
+            var act = state.CurrentActIndex;
+            var history = state.MapPointHistory;
+            var nextRow = act >= 0 && act < history.Count ? history[act].Count : 0;
+
+            var points = ShadowGlow.Descendants(__instance).OfType<NMapPoint>().ToList();
+            var marked = 0;
+            foreach (var point in points)
+            {
+                var coord = point.Point?.coord;
+                if (coord is not { } at || at.row < nextRow)
+                {
+                    continue;
+                }
+
+                if (run.FloorAt(act, at.row) is not { } floor || !SameKind(floor.PointType, point.Point!.PointType))
+                {
+                    continue;
+                }
+
+                ShadowGlow.Mark(point);
+                marked++;
+            }
+
+            ModLog.Info($"Map for act {act}: {points.Count} node(s), marking from row {nextRow} on, marked {marked}.");
+        }
+        catch (Exception ex)
+        {
+            ModLog.Warn($"Could not mark the route taken last time: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The record stores the kind as the game's own lower-case name ("rest_site", "monster"), which
+    /// is the enum with its words split. Comparing with the separators removed avoids depending on
+    /// that spelling.
+    /// </summary>
+    private static bool SameKind(string recorded, MapPointType live) =>
+        string.Equals(recorded.Replace("_", ""), live.ToString(), StringComparison.OrdinalIgnoreCase);
 }

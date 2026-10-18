@@ -68,6 +68,7 @@ public static class LizardTailMod
             "UserDataPathProvider.get_IsRunningModded", "NGame.CheckShowModdedSaveFilePopup",
             "RunManager.Launch", "RunManager.CleanUp", "NCardRewardSelectionScreen.RefreshOptions",
             "NEventLayout.AddOptions",
+            "NMapScreen.SetMap", "NCard.OnFreedToPool", "NCard.OnReturnedFromPool",
         };
         var missing = expected.Where(e => !patched.Contains(e)).ToList();
         if (missing.Count > 0)
