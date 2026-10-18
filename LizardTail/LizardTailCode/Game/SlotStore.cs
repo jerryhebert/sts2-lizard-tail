@@ -125,11 +125,14 @@ public static class SlotStore
     /// The slot folder of the other kind of profile (modded or normal). Runs parked there are listed too,
     /// so switching between shared and separate saves never hides a parked run.
     /// </summary>
-    private static string OtherSlotDir(SaveKind kind)
+    private static string OtherSlotDir(SaveKind kind) => $"{OtherFolder(kind)}/slots";
+
+    /// <summary>The mod's folder for this kind of run under the other kind of profile (modded or normal).</summary>
+    public static string OtherFolder(SaveKind kind)
     {
         var modded = UserDataPathProvider.GetAccountDir().Length > 0;
         var otherProfile = $"{Root}/{UserDataPathProvider.GetProfileDir(ProfileId, !modded)}";
-        return $"{SaveKinds.Folder(kind, otherProfile)}/slots";
+        return SaveKinds.Folder(kind, otherProfile);
     }
 
     public static string TrashDir(SaveKind kind) => $"{Folder(kind)}/trash";
@@ -310,11 +313,17 @@ public static class SlotStore
     /// Parks a copy of a run under a name no other copy uses, and checks it reads back. An identical
     /// copy already parked is reused instead of written twice.
     /// </summary>
-    public static string Park(SaveKind kind, string text, RunSummary run)
+    public static string Park(SaveKind kind, string text, RunSummary run) => WriteCopy(SlotDir(kind), text, run);
+
+    /// <summary>
+    /// Writes a copy of a run into <paramref name="dir"/> under a name no other copy there uses, and
+    /// checks it reads back. An identical copy already there is reused instead of written twice.
+    /// </summary>
+    public static string WriteCopy(string dir, string text, RunSummary run)
     {
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            var path = $"{SlotDir(kind)}/{SlotRules.FileName(run, attempt)}";
+            var path = $"{dir}/{SlotRules.FileName(run, attempt)}";
             if (Local.FileExists(path))
             {
                 if (Local.ReadFile(path) == text)
@@ -328,7 +337,7 @@ public static class SlotStore
             var check = RunSummary.TryParse(Local.ReadFile(path));
             if (check == null || check.StartTime != run.StartTime || check.SaveTime != run.SaveTime)
             {
-                throw new InvalidOperationException("The parked copy did not read back correctly, so nothing else was changed.");
+                throw new InvalidOperationException("The copy did not read back correctly, so nothing else was changed.");
             }
             return path;
         }

@@ -15,7 +15,7 @@ namespace LizardTail.LizardTailCode.Game;
 /// and Trash moves files to a trash folder. Copies of the active run are hidden from the list, and are
 /// moved to the trash only once the game has saved newer progress of that run, which proves the swap took.
 /// </summary>
-public static class SlotActions
+public static partial class SlotActions
 {
     /// <summary>True while this mod is itself deleting the active save, so the snapshot hook stands aside.</summary>
     public static bool Busy { get; private set; }
@@ -296,9 +296,10 @@ public static class SlotActions
     /// Moves an abandon record aside (a copy is kept in the mod's folder) and removes it from the game's
     /// history here and in Steam Cloud, then checks both. If either still has it, the game would delete
     /// the run again at the next launch, so the record is put back and the swap is refused. Returns the
-    /// record, so a later failure can put it back; null when there was none.
+    /// record, so a later failure can put it back; null when there was none. A won or lost run's record
+    /// is moved only when <paramref name="allowFinished"/> (going back to a checkpoint).
     /// </summary>
-    private static string? ReviveHistory(SaveKind kind, long startTime)
+    private static string? ReviveHistory(SaveKind kind, long startTime, bool allowFinished = false)
     {
         var path = SlotStore.HistoryPath(startTime);
         var cloud = SlotStore.Cloud;
@@ -309,7 +310,7 @@ public static class SlotActions
         {
             return null;
         }
-        if (HistoryRecord.EndingOf(record) != RunEnding.Abandoned)
+        if (HistoryRecord.EndingOf(record) != RunEnding.Abandoned && !allowFinished)
         {
             throw new InvalidOperationException(SlotText.StateNote(SlotState.Finished));
         }
@@ -330,20 +331,20 @@ public static class SlotActions
         }
         catch (Exception ex)
         {
-            ModLog.Warn($"Could not move the abandon record of run {startTime} aside: {ex.Message}");
+            ModLog.Warn($"Could not move the history record of run {startTime} aside: {ex.Message}");
             removed = false; // cannot tell what Steam Cloud holds, so assume the record is still there
         }
 
         if (!removed)
         {
             RestoreHistory(kind, startTime, record);
-            throw new InvalidOperationException("The abandon record could not be removed here and from Steam Cloud, so the game would delete this run again. Nothing was changed.");
+            throw new InvalidOperationException("The run's history record could not be removed here and from Steam Cloud, so the game would delete this run again. Nothing was changed.");
         }
-        ModLog.Info($"Moved the abandon record of run {startTime} aside so it can continue");
+        ModLog.Info($"Moved the history record of run {startTime} aside so it can continue");
         return record;
     }
 
-    /// <summary>Puts an abandon record back where the game keeps it, after a swap that did not complete.</summary>
+    /// <summary>Puts a history record back where the game keeps it, after a swap or restore that did not complete.</summary>
     private static void RestoreHistory(SaveKind kind, long startTime, string record)
     {
         var path = SlotStore.HistoryPath(startTime);
@@ -354,11 +355,11 @@ public static class SlotActions
             {
                 SlotStore.Store.WriteFile(path, Encoding.UTF8.GetBytes(record));
             }
-            ModLog.Info($"Put the abandon record of run {startTime} back");
+            ModLog.Info($"Put the history record of run {startTime} back");
         }
         catch (Exception ex)
         {
-            ModLog.Error($"Could not put the abandon record of run {startTime} back; a copy is in {SlotStore.RevivedHistoryDir(kind)}: {ex}");
+            ModLog.Error($"Could not put the history record of run {startTime} back; a copy is in {SlotStore.RevivedHistoryDir(kind)}: {ex}");
         }
     }
 

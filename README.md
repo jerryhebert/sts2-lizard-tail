@@ -12,6 +12,11 @@ host a new one, and later make the old run active again and press Load to contin
 The game's solo save is single too, so a **Solo runs** panel on the main menu does the same for it:
 park the run **Continue** would pick up, start another, and swap back later.
 
+Some choices are final once made: a boss relic, an Ancient's offer, a card you remove. **Checkpoints**
+let you try both ways. Take one from the pause menu before the choice, play on, and later go back to
+it from the menu to take the other path. Where you were when you went back is kept as a checkpoint too,
+so neither path is lost.
+
 ## Using it
 
 Open **Multiplayer** from the main menu. The panel on the right lists:
@@ -79,6 +84,39 @@ The game's own rules apply when you press **Load** on a multiplayer run:
 - Any two or more of them can continue. The game asks you to confirm when someone is missing, and
   the missing players stay in the run for next time.
 
+### Checkpoints
+
+During a run, the pause menu has a **Checkpoint** panel at its right edge. Type a label (or keep the
+suggested one) and press **Save checkpoint**. A checkpoint is a copy of the game's save as it was last
+written, and the game writes it at two moments:
+
+- on entering a room, before the fight or event starts, and
+- once a fight is won (rewards still waiting) or an Ancient's choice is made.
+
+Choices themselves are saved only at the next of those moments, so a checkpoint taken while a choice is
+on screen (the rewards after a boss, an event's options) goes back to before it. The panel says which
+moment it will save, for example "Floor 17, after the boss fight, rewards waiting" or "Floor 18,
+entering the boss fight". Click the label box to type; with a controller, move right from the pause
+menu's buttons to **Save checkpoint** and keep the suggested label.
+
+To go back, **Save & Quit**, then open **Solo runs** on the main menu (or **Multiplayer runs** on the
+multiplayer menu for a run you host). The **Checkpoints** section lists them, the active run's first:
+
+- **Restore** makes the checkpoint the game's save, so **Continue** (or **Load**) picks up from that
+  moment. If the active run is the same one, where you were is kept first as a checkpoint named
+  "Before going back to …" (with the game's previous save beside it), unless an identical checkpoint
+  already exists; if it is another run, that run is parked. Your own labels are never changed. Parked copies of the restored run
+  become checkpoints too, since the parked list clears copies of the active run once the game saves past
+  them. The checkpoint itself stays, so you can go back to it again.
+- **Rename** edits the label in place. **Trash** (press twice) moves a checkpoint to the trash folder.
+
+A run that was won, lost or abandoned after the checkpoint can still be restored. Its result is moved
+aside (a copy is kept) so the game does not delete the save again at the next launch. The game's
+statistics keep counting the first result, and count the new one too when the restored run ends.
+
+In multiplayer, only the host keeps the save, so only the host can take and restore checkpoints, and
+everyone rejoins through **Load** as usual.
+
 ## Your normal saves stay in use
 
 Out of the box, the game switches to a separate, modded profile as soon as any mod loads. Its
@@ -97,13 +135,15 @@ Parked runs are files under `%APPDATA%\SlayTheSpire2\steam\<your id>\mod_data\Li
 folder named like the game's own profile folder: `profile<N>\` while the normal profile is in use, or
 `modded\profile<N>\` while the game keeps separate modded saves. The panel lists runs parked under
 either, so switching between them never hides one. Solo runs are kept apart, in a `solo` folder inside
-that profile folder with the same three folders in it. The game's log names the exact folders when the
+that profile folder with the same folders in it. The game's log names the exact folders when the
 main menu and the multiplayer menu first open.
 
 - `slots\`: parked runs, one file per copy (`<run start>-<save time>.save`). Nothing here is ever
   overwritten.
+- `checkpoints\`: checkpoints, named the same way, each with a `.json` file beside it holding its label
+  and when it was taken.
 - `trash\`: runs you trashed, and older copies of a run the game has since saved past.
-- `revived-history\`: abandon records moved aside.
+- `revived-history\`: history records moved aside when an abandoned or finished run is picked up again.
 
 Damaged saves the mod kept are named `damaged-…` or `set-aside-…` instead. One more file sits directly
 in `mod_data\LizardTail\`: `names.json`, the Steam names of the people in your runs, remembered so they
