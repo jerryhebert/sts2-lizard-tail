@@ -40,7 +40,6 @@ public partial class SlotPicker : PanelContainer
     private Vector2? _tilesHomeOffset;
     private static readonly HashSet<SaveKind> LoggedFolder = new();
     private bool _acting;
-    private static readonly HashSet<SaveKind> RefreshRequested = new();
 
     public static SlotPicker? Of(Node menu) => menu.GetNodeOrNull<SlotPicker>(NodeName);
 
@@ -435,37 +434,6 @@ public partial class SlotPicker : PanelContainer
         Rebuild(focusKey, owner is SlotButton);
     }
 
-    /// <summary>
-    /// Makes the game's tiles and this list match the saves on disk, rebuilding the list once. The main
-    /// menu's redraw loads the solo save, and so can itself set a damaged file aside and ask for this
-    /// again: that is followed here, a bounded number of times, rather than on every frame.
-    /// </summary>
-    private void RedrawAll()
-    {
-        var owner = GetViewport()?.GuiGetFocusOwner();
-        var focusKey = KeyOf(owner) ?? KeyOf(_host.LastFocused);
-        _acting = true;
-        try
-        {
-            for (var pass = 0; pass < 3; pass++) // the save and its .backup, then the menu without either
-            {
-                _host.RefreshButtons();
-                if (!RefreshRequested.Remove(_host.Kind))
-                {
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            _acting = false;
-        }
-        Rebuild(focusKey, owner is SlotButton);
-    }
-
-    /// <summary>Asks the open picker for this kind of run to redraw on its next frame, after the game changed the saves itself.</summary>
-    public static void RequestRefresh(SaveKind kind) => RefreshRequested.Add(kind);
-
     public override void _Process(double delta)
     {
         var shown = _host.Shown;
@@ -476,10 +444,6 @@ public partial class SlotPicker : PanelContainer
             {
                 Refresh(); // back from another screen: the profile, and so the saves, may have changed
             }
-        }
-        if (IsVisibleInTree() && RefreshRequested.Remove(_host.Kind))
-        {
-            RedrawAll();
         }
         FitTiles(); // every frame, so tiles never sit under the picker after Host and Load swap places
         _sinceCheck += delta;

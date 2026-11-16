@@ -83,8 +83,8 @@ public class SaveKindTests
         Assert.Equal("Parked. Host now starts a new run.", SlotText.Parked(SaveKind.Multiplayer));
         Assert.Equal("Parked, but Steam Cloud kept the old save, so it comes back at the next launch unless you host first.", SlotText.ParkedButCloudKept(SaveKind.Multiplayer));
         Assert.Equal("Load continues this run.", SlotText.ContinuesIt(SaveKind.Multiplayer));
-        Assert.Equal("The game's multiplayer save cannot be read. Press Load once so the game sets it aside; the mod parks a copy of whatever it holds.", SlotText.Unreadable(SaveKind.Multiplayer));
-        Assert.Equal("The game's save file is damaged; this is its backup. Press Load once so the game repairs it or sets it aside before parking.", SlotText.Damaged(SaveKind.Multiplayer));
+        Assert.Equal("The game's multiplayer save cannot be read. Abandon clears it; the mod parks a copy of whatever it holds first.", SlotText.Unreadable(SaveKind.Multiplayer));
+        Assert.Equal("The game's save file is damaged; this is its backup. Load the run once so the game saves it again before parking.", SlotText.Damaged(SaveKind.Multiplayer));
     }
 
     [Fact]

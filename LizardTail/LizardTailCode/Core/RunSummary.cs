@@ -8,7 +8,7 @@ public readonly record struct RunPlayer(ulong NetId, string CharacterId, int Hp,
 /// <summary>
 /// What the picker shows about a saved multiplayer run, read straight from the save's JSON. Read
 /// with JsonDocument rather than the game's serializer: it works on any schema version and has no
-/// side effects (the game's own loader renames a file it cannot validate to *.corrupt).
+/// side effects (the game's own loader may write files, such as a .pre-repair copy).
 /// </summary>
 public sealed record RunSummary(
     long StartTime,
