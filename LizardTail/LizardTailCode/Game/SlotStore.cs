@@ -336,7 +336,7 @@ public static class SlotStore
     }
 
     /// <summary>
-    /// Parks a save the mod cannot read as a run (damaged, or about to be set aside by the game), so it
+    /// Parks a save the mod cannot read as a run (damaged, or about to be deleted by the game), so it
     /// is kept and listed as unreadable rather than lost. Readable runs go through <see cref="Park"/>.
     /// </summary>
     public static void ParkAnything(SaveKind kind, string text, string why)

@@ -61,7 +61,8 @@ A parked run can show a note instead of being ready:
 If you press the game's own **Abandon** (or **Abandon Run**, for a solo run, on the main menu or from
 inside the run), the mod keeps a copy of the run in that kind's parked list first.
 That includes a save the game cannot load (from a newer game version, or with content from a mod you
-turned off): the game sets those aside as `.corrupt` files, and the mod parks a copy before it does.
+turned off): the game leaves such a save in place and refuses to load it, and Abandon is how to clear
+it, so the mod's copy is kept the same way.
 Such a copy shows as saved by a newer version, or fails Make active's load check, until you update the
 game or turn that mod back on.
 
@@ -129,7 +130,7 @@ main menu and the multiplayer menu first open.
 - `trash\`: runs you trashed, and older copies of a run the game has since saved past.
 - `revived-history\`: abandon records moved aside.
 
-Damaged saves the mod kept are named `damaged-…` or `set-aside-…` instead. One more file sits directly
+Damaged saves the mod kept are named `damaged-…` instead (older versions also made `set-aside-…`). One more file sits directly
 in `mod_data\LizardTail\`: `names.json`, the Steam names of the people in your runs, remembered so they
 still show when Steam is offline or someone leaves your friends list.
 
@@ -146,9 +147,8 @@ it, and none of its parked copies are hidden or cleared.
 
 Swaps are refused while they would be unsafe: once Load, Host or Continue has been pressed, with a popup open,
 during a run, or while the game is saving. They are also refused while the game's own save file is
-damaged (the panel then shows its backup); pressing Load once lets the game repair it or set it aside.
-The main menu reads the solo save whenever it draws its buttons, so a damaged solo save is repaired or
-set aside without a press.
+damaged (the panel then shows its backup): the game loads that backup in its place, so continuing the
+run once (Continue, or Load in multiplayer) writes the file whole again.
 
 ## Installing
 

@@ -98,8 +98,8 @@ public static class SlotActions
         }
         var text = SlotStore.ReadActive(kind)
             ?? throw new InvalidOperationException(kind == SaveKind.Solo
-                ? "The game's solo save cannot be read, so it was left alone. The game sets it aside the next time it draws the main menu."
-                : "The game's multiplayer save cannot be read, so it was left alone. Press Load once so the game sets it aside.");
+                ? "The game's solo save cannot be read, so it was left alone. Abandon Run clears it, and the mod keeps a copy first."
+                : "The game's multiplayer save cannot be read, so it was left alone. Abandon clears it, and the mod keeps a copy first.");
         return (text, RunSummary.TryParse(text)!);
     }
 
@@ -405,42 +405,4 @@ public static class SlotActions
             ModLog.Warn($"Could not keep a copy of the {SaveKinds.Name(kind)} run before it was removed: {ex.Message}");
         }
     }
-
-    /// <summary>
-    /// Called just before the game renames a save of this kind it cannot load to *.corrupt (multiplayer:
-    /// on Load or Abandon; solo: whenever the main menu draws its buttons). Keeps a parked copy, so the
-    /// run is listed (as unreadable or from a newer version) instead of only sitting in the saves folder.
-    /// <paramref name="path"/> limits it to one file.
-    /// </summary>
-    public static void SnapshotBeforeGameSetsAside(SaveKind kind, string? path = null)
-    {
-        if (Busy || !SlotStore.Manager.IsProfileInitialized)
-        {
-            return;
-        }
-
-        try
-        {
-            var active = SlotStore.ActivePath(kind);
-            var ours = new[] { active, active + ".backup" };
-            foreach (var candidate in path == null ? ours : ours.Where(p => SamePath(p, path)))
-            {
-                // The game shows an error popup but does not redraw the menu, whatever the file held.
-                SlotPicker.RequestRefresh(kind);
-                var text = SlotStore.Store.FileExists(candidate) ? SlotStore.Store.ReadFile(candidate) : null;
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    SlotStore.ParkAnything(kind, text, "set-aside");
-                    ModLog.Info($"Kept a copy of {candidate} before the game set it aside as unloadable");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            ModLog.Warn($"Could not keep a copy of the {SaveKinds.Name(kind)} save the game set aside: {ex.Message}");
-        }
-    }
-
-    private static bool SamePath(string a, string b) =>
-        string.Equals(a.Replace('\\', '/'), b.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase);
 }

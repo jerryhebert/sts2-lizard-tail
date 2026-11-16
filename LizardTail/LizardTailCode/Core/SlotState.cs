@@ -203,17 +203,20 @@ public static class SlotText
     public const string CloudUnknown = "Steam Cloud could not be checked for this run just now.";
 
     /// <summary>
-    /// How the game comes to repair a damaged save or set it aside. Multiplayer: when Load is pressed.
-    /// Solo: by itself, since the main menu loads the solo save every time it draws its buttons.
+    /// How a damaged save gets rewritten: the game loads its .backup in its place, and the run's next
+    /// save writes the file whole again.
     /// </summary>
     public static string HowTheGameRepairs(SaveKind kind) => kind == SaveKind.Solo
-        ? "The game repairs it or sets it aside the next time it draws the main menu"
-        : "Press Load once so the game repairs it or sets it aside";
+        ? "Continue the run once so the game saves it again"
+        : "Load the run once so the game saves it again";
 
-    /// <summary>Shown when the game has a save that cannot be read at all.</summary>
+    /// <summary>
+    /// Shown when the game has a save that cannot be read at all. The game leaves such a save in place
+    /// and refuses to load it; its Abandon clears it, and the mod keeps a copy first.
+    /// </summary>
     public static string Unreadable(SaveKind kind) => kind == SaveKind.Solo
-        ? "The game's solo save cannot be read. The game sets it aside the next time it draws the main menu; the mod parks a copy of whatever it holds."
-        : "The game's multiplayer save cannot be read. Press Load once so the game sets it aside; the mod parks a copy of whatever it holds.";
+        ? "The game's solo save cannot be read. Abandon Run clears it; the mod parks a copy of whatever it holds first."
+        : "The game's multiplayer save cannot be read. Abandon clears it; the mod parks a copy of whatever it holds first.";
 
     /// <summary>Shown when the game's save file is damaged and the picker is reading its .backup instead.</summary>
     public static string Damaged(SaveKind kind) =>
