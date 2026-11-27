@@ -63,11 +63,11 @@ public static class LizardTailMod
         {
             "NMultiplayerSubmenu._Ready", "NMultiplayerSubmenu.OnSubmenuShown",
             "NMultiplayerSubmenu.UpdateButtons", "SaveManager.DeleteCurrentMultiplayerRun",
-            "RunSaveManager.RenameBrokenMultiplayerRunSave", "MigrationManager.PreserveCorruptFile",
             "NMainMenu._Ready", "NMainMenu.RefreshButtons", "SaveManager.DeleteCurrentRun",
             "UserDataPathProvider.get_IsRunningModded", "NGame.CheckShowModdedSaveFilePopup",
             "RunManager.Launch", "RunManager.CleanUp", "NCardRewardSelectionScreen.RefreshOptions",
-            "NEventLayout.AddOptions",
+            "NEventLayout.AddOptions", "NPauseMenu._Ready",
+            "NMapScreen.SetMap", "NMapScreen.RefreshAllPointVisuals", "NCard.OnFreedToPool", "NCard.OnReturnedFromPool",
         };
         var missing = expected.Where(e => !patched.Contains(e)).ToList();
         if (missing.Count > 0)

@@ -15,7 +15,7 @@ namespace LizardTail.LizardTailCode.Game;
 /// and Trash moves files to a trash folder. Copies of the active run are hidden from the list, and are
 /// moved to the trash only once the game has saved newer progress of that run, which proves the swap took.
 /// </summary>
-public static class SlotActions
+public static partial class SlotActions
 {
     /// <summary>True while this mod is itself deleting the active save, so the snapshot hook stands aside.</summary>
     public static bool Busy { get; private set; }
@@ -98,8 +98,8 @@ public static class SlotActions
         }
         var text = SlotStore.ReadActive(kind)
             ?? throw new InvalidOperationException(kind == SaveKind.Solo
-                ? "The game's solo save cannot be read, so it was left alone. The game sets it aside the next time it draws the main menu."
-                : "The game's multiplayer save cannot be read, so it was left alone. Press Load once so the game sets it aside.");
+                ? "The game's solo save cannot be read, so it was left alone. Abandon Run clears it, and the mod keeps a copy first."
+                : "The game's multiplayer save cannot be read, so it was left alone. Abandon clears it, and the mod keeps a copy first.");
         return (text, RunSummary.TryParse(text)!);
     }
 
@@ -296,9 +296,10 @@ public static class SlotActions
     /// Moves an abandon record aside (a copy is kept in the mod's folder) and removes it from the game's
     /// history here and in Steam Cloud, then checks both. If either still has it, the game would delete
     /// the run again at the next launch, so the record is put back and the swap is refused. Returns the
-    /// record, so a later failure can put it back; null when there was none.
+    /// record, so a later failure can put it back; null when there was none. A won or lost run's record
+    /// is moved only when <paramref name="allowFinished"/> (going back to a checkpoint).
     /// </summary>
-    private static string? ReviveHistory(SaveKind kind, long startTime)
+    private static string? ReviveHistory(SaveKind kind, long startTime, bool allowFinished = false)
     {
         var path = SlotStore.HistoryPath(startTime);
         var cloud = SlotStore.Cloud;
@@ -309,7 +310,7 @@ public static class SlotActions
         {
             return null;
         }
-        if (HistoryRecord.EndingOf(record) != RunEnding.Abandoned)
+        if (HistoryRecord.EndingOf(record) != RunEnding.Abandoned && !allowFinished)
         {
             throw new InvalidOperationException(SlotText.StateNote(SlotState.Finished));
         }
@@ -330,20 +331,20 @@ public static class SlotActions
         }
         catch (Exception ex)
         {
-            ModLog.Warn($"Could not move the abandon record of run {startTime} aside: {ex.Message}");
+            ModLog.Warn($"Could not move the history record of run {startTime} aside: {ex.Message}");
             removed = false; // cannot tell what Steam Cloud holds, so assume the record is still there
         }
 
         if (!removed)
         {
             RestoreHistory(kind, startTime, record);
-            throw new InvalidOperationException("The abandon record could not be removed here and from Steam Cloud, so the game would delete this run again. Nothing was changed.");
+            throw new InvalidOperationException("The run's history record could not be removed here and from Steam Cloud, so the game would delete this run again. Nothing was changed.");
         }
-        ModLog.Info($"Moved the abandon record of run {startTime} aside so it can continue");
+        ModLog.Info($"Moved the history record of run {startTime} aside so it can continue");
         return record;
     }
 
-    /// <summary>Puts an abandon record back where the game keeps it, after a swap that did not complete.</summary>
+    /// <summary>Puts a history record back where the game keeps it, after a swap or restore that did not complete.</summary>
     private static void RestoreHistory(SaveKind kind, long startTime, string record)
     {
         var path = SlotStore.HistoryPath(startTime);
@@ -354,11 +355,11 @@ public static class SlotActions
             {
                 SlotStore.Store.WriteFile(path, Encoding.UTF8.GetBytes(record));
             }
-            ModLog.Info($"Put the abandon record of run {startTime} back");
+            ModLog.Info($"Put the history record of run {startTime} back");
         }
         catch (Exception ex)
         {
-            ModLog.Error($"Could not put the abandon record of run {startTime} back; a copy is in {SlotStore.RevivedHistoryDir(kind)}: {ex}");
+            ModLog.Error($"Could not put the history record of run {startTime} back; a copy is in {SlotStore.RevivedHistoryDir(kind)}: {ex}");
         }
     }
 
@@ -405,42 +406,4 @@ public static class SlotActions
             ModLog.Warn($"Could not keep a copy of the {SaveKinds.Name(kind)} run before it was removed: {ex.Message}");
         }
     }
-
-    /// <summary>
-    /// Called just before the game renames a save of this kind it cannot load to *.corrupt (multiplayer:
-    /// on Load or Abandon; solo: whenever the main menu draws its buttons). Keeps a parked copy, so the
-    /// run is listed (as unreadable or from a newer version) instead of only sitting in the saves folder.
-    /// <paramref name="path"/> limits it to one file.
-    /// </summary>
-    public static void SnapshotBeforeGameSetsAside(SaveKind kind, string? path = null)
-    {
-        if (Busy || !SlotStore.Manager.IsProfileInitialized)
-        {
-            return;
-        }
-
-        try
-        {
-            var active = SlotStore.ActivePath(kind);
-            var ours = new[] { active, active + ".backup" };
-            foreach (var candidate in path == null ? ours : ours.Where(p => SamePath(p, path)))
-            {
-                // The game shows an error popup but does not redraw the menu, whatever the file held.
-                SlotPicker.RequestRefresh(kind);
-                var text = SlotStore.Store.FileExists(candidate) ? SlotStore.Store.ReadFile(candidate) : null;
-                if (!string.IsNullOrWhiteSpace(text))
-                {
-                    SlotStore.ParkAnything(kind, text, "set-aside");
-                    ModLog.Info($"Kept a copy of {candidate} before the game set it aside as unloadable");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            ModLog.Warn($"Could not keep a copy of the {SaveKinds.Name(kind)} save the game set aside: {ex.Message}");
-        }
-    }
-
-    private static bool SamePath(string a, string b) =>
-        string.Equals(a.Replace('\\', '/'), b.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase);
 }

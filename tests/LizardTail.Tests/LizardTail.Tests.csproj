@@ -33,6 +33,13 @@
     <!-- Microsoft.NET.Test.Sdk drags in a deprecated 5.0.0 of this package; pin it forward so the
          dependency audit stays clean. Remove once the test SDK stops referencing the old version. -->
     <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.12" />
+    <!-- xunit.v3 4.0.2 (and 4.0.3) asks for Microsoft.Testing.Platform 2.5.1 / 2.5.2, which NuGet now marks
+         Legacy; 2.5.3 is the release that is not. Pin the platform packages forward so the dependency audit
+         stays clean. Remove once xunit.v3 depends on 2.5.3 or later itself. -->
+    <PackageReference Include="Microsoft.Testing.Platform" Version="2.5.3" />
+    <PackageReference Include="Microsoft.Testing.Platform.MSBuild" Version="2.5.3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.Telemetry" Version="2.5.3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport.Abstractions" Version="2.5.3" />
   </ItemGroup>
 
 </Project>
