@@ -6,7 +6,6 @@ using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Managers;
-using MegaCrit.Sts2.Core.Saves.Migrations;
 using LizardTail.LizardTailCode.Core;
 
 namespace LizardTail.LizardTailCode.Game;
@@ -182,28 +181,4 @@ public static class RefreshOnButtonsPatch
 public static class SnapshotBeforeDeletePatch
 {
     private static void Prefix() => SlotActions.SnapshotBeforeGameDeletes(SaveKind.Multiplayer);
-}
-
-/// <summary>Keeps a copy of a multiplayer save that failed the game's load check, before it is renamed to *.corrupt.</summary>
-[HarmonyPatch(typeof(RunSaveManager), nameof(RunSaveManager.RenameBrokenMultiplayerRunSave))]
-public static class SnapshotBeforeRenamePatch
-{
-    private static void Prefix() => SlotActions.SnapshotBeforeGameSetsAside(SaveKind.Multiplayer);
-}
-
-/// <summary>
-/// Keeps a copy of a run save the game could not read or migrate, before it is renamed to *.corrupt.
-/// The game routes every save type through here; only the multiplayer and solo saves and their backups
-/// are copied, each into its own kind's folder.
-/// </summary>
-[HarmonyPatch(typeof(MigrationManager), "PreserveCorruptFile")]
-public static class SnapshotBeforePreservePatch
-{
-    private static void Prefix(string savePath)
-    {
-        foreach (var kind in Enum.GetValues<SaveKind>())
-        {
-            SlotActions.SnapshotBeforeGameSetsAside(kind, savePath);
-        }
-    }
 }
